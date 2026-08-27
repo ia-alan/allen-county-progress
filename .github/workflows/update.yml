@@ -2,9 +2,11 @@ name: Update shipment progress
 
 on:
   schedule:
-    # Runs daily at 13:00 UTC (9am ET / 6am PT). Adjust the cron expression
-    # to change frequency — https://crontab.guru is handy for this.
-    - cron: "0 13 * * *"
+    # Runs weekdays at 11:00 UTC = 7am Eastern Daylight Time (UTC-4).
+    # GitHub Actions cron is fixed UTC and does not adjust for DST, so this
+    # drifts to 6am Eastern Standard Time (UTC-5) roughly Nov-Mar.
+    # Adjust the cron expression to change frequency — https://crontab.guru
+    - cron: "0 11 * * 1-5"
   workflow_dispatch: {}
 
 permissions:
