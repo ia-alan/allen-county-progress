@@ -1,0 +1,257 @@
+<title>Allen County Partner Dashboard</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:      #000000;
+    --page-plane:     #000000;
+    --text-primary:   #e8e6e1;
+    --text-secondary: #e8e6e1;
+    --text-muted:     #e8e6e1;
+    --gridline:       rgba(232,230,225,0.3);
+    --baseline:       rgba(232,230,225,0.5);
+    --border:         rgba(232,230,225,0.4);
+    --series-1:       #e8e6e1;
+    --series-1-wash:  rgba(232,230,225,0.14);
+    --card-shadow:    none;
+  }
+  /* Fixed brand palette — deliberately identical regardless of the viewer's
+     light/dark setting; this page does not adapt. */
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: light;
+      --surface-1:      #000000;
+      --page-plane:     #000000;
+      --text-primary:   #e8e6e1;
+      --text-secondary: #e8e6e1;
+      --text-muted:     #e8e6e1;
+      --gridline:       rgba(232,230,225,0.3);
+      --baseline:       rgba(232,230,225,0.5);
+      --border:         rgba(232,230,225,0.4);
+      --series-1:       #e8e6e1;
+      --series-1-wash:  rgba(232,230,225,0.14);
+      --card-shadow:    none;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: light;
+    --surface-1:      #000000;
+    --page-plane:     #000000;
+    --text-primary:   #e8e6e1;
+    --text-secondary: #e8e6e1;
+    --text-muted:     #e8e6e1;
+    --gridline:       rgba(232,230,225,0.3);
+    --baseline:       rgba(232,230,225,0.5);
+    --border:         rgba(232,230,225,0.4);
+    --series-1:       #e8e6e1;
+    --series-1-wash:  rgba(232,230,225,0.14);
+    --card-shadow:    none;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--page-plane);
+    color: var(--text-primary);
+    font-family: "OCR-A Extended", "OCR A Extended", "OCR-A", "OCR A Std", monospace;
+    padding: 32px 24px 64px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  header { margin-bottom: 28px; }
+  h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; text-wrap: balance; }
+  .subtitle { color: var(--text-secondary); font-size: 14px; margin: 0; }
+
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .kpi-tile {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    box-shadow: var(--card-shadow);
+  }
+  .kpi-label { font-size: 12px; color: var(--text-secondary); margin: 0 0 6px; }
+  .kpi-value { font-size: 26px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 20px 16px;
+    box-shadow: var(--card-shadow);
+    margin-bottom: 20px;
+  }
+  .card h2 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .card .card-sub { font-size: 12.5px; color: var(--text-muted); margin: 0 0 14px; }
+
+  .chart-scroll { overflow-x: auto; }
+  .chart-scroll::-webkit-scrollbar { height: 6px; }
+  .chart-scroll::-webkit-scrollbar-track { background: transparent; }
+  .chart-scroll::-webkit-scrollbar-thumb { background: rgba(232,230,225,0.4); border-radius: 3px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left;
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--text-muted);
+    font-weight: 600;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--gridline);
+    white-space: nowrap;
+  }
+  thead th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody td { padding: 9px 10px; border-bottom: 1px solid var(--gridline); color: var(--text-primary); }
+  tbody tr:hover { background: var(--series-1-wash); }
+  td.code { font-weight: 600; }
+
+  .progress-cell { display: flex; align-items: center; gap: 10px; min-width: 180px; }
+  .progress-track {
+    flex: 1;
+    height: 14px;
+    background: var(--series-1-wash);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .progress-fill { height: 14px; background: var(--series-1); }
+  .progress-pct {
+    font-variant-numeric: tabular-nums;
+    font-size: 12.5px;
+    width: 40px;
+    flex-shrink: 0;
+    text-align: right;
+  }
+
+  .about {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+  .about p + p { margin-top: 10px; }
+
+  footer {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    text-align: center;
+    margin-top: 8px;
+  }
+
+  @media (max-width: 640px) {
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .progress-cell { min-width: 120px; }
+  }
+</style>
+
+<header>
+  <h1>Allen County Public Library</h1>
+  <p class="subtitle">Digitization progress by shipment — updated by the Internet Archive Indiana scanning team (<span id="snapshot-date"></span>)</p>
+</header>
+
+<section class="kpi-row" id="kpi-row"></section>
+
+<div class="card">
+  <h2>Shipments in progress</h2>
+  <p class="card-sub">Each row is one shipment, identified by its tracking code. Shipments with no recent activity fall off this list once they've been complete for a while.</p>
+  <div class="chart-scroll">
+    <table id="shipments-table">
+      <thead>
+        <tr>
+          <th>Collection</th>
+          <th class="num">Completed / Total</th>
+          <th>Progress</th>
+        </tr>
+      </thead>
+      <tbody id="shipments-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card about">
+  <h2>About this dashboard</h2>
+  <p>"Completed" means an item has finished digitization and review and is available online. "Total" is the full number of items in that shipment.</p>
+  <p>This is a snapshot from the most recent update, not a live feed — check back for the latest numbers.</p>
+  <p>Questions about a specific shipment? Reach out to your Internet Archive contact.</p>
+</div>
+
+<footer>Allen County Public Library × Internet Archive</footer>
+
+<script>
+const SHIPMENTS = {"generated_note":"Snapshot of archive.org metadata for collection:allen_county, grouped by shiptracking, including stub items recovered via direct identifier discovery where possible","active_window_days":90,"shipment_count":13,"total_items":765,"total_completed":606,"shipments":[{"code":"SDGSF","total":121,"completed":0,"discovery":"enumerated","last_activity":"2026-08-18"},{"code":"MERWIN","total":54,"completed":18,"discovery":"enumerated","last_activity":"2026-08-27"},{"code":"JORDAN","total":78,"completed":76,"discovery":"enumerated","last_activity":"2026-08-24"},{"code":"LEACH","total":54,"completed":54,"discovery":"enumerated","last_activity":"2026-08-24"},{"code":"HUTCH","total":66,"completed":66,"discovery":"enumerated","last_activity":"2026-07-22"},{"code":"CRIPEC","total":55,"completed":55,"discovery":"enumerated","last_activity":"2026-08-03"},{"code":"LAGER","total":31,"completed":31,"discovery":"enumerated","last_activity":"2026-07-23"},{"code":"LUCILLEG","total":30,"completed":30,"discovery":"enumerated","last_activity":"2026-06-03"},{"code":"NUNNELEY","total":79,"completed":79,"discovery":"enumerated","last_activity":"2026-07-20"},{"code":"PETTYP","total":20,"completed":20,"discovery":"enumerated","last_activity":"2026-06-04"},{"code":"ACGC2602","total":48,"completed":48,"discovery":"indexed-only","last_activity":"2026-08-12"},{"code":"ACGC2601","total":37,"completed":37,"discovery":"indexed-only","last_activity":"2026-07-09"},{"code":"JASPERCS","total":92,"completed":92,"discovery":"indexed-only","last_activity":"2026-08-19"}]};
+const SNAPSHOT_DATE = "August 27, 2026";
+
+const fmt = n => n.toLocaleString('en-US');
+
+document.getElementById('snapshot-date').textContent = SNAPSHOT_DATE;
+
+const kpiRow = document.getElementById('kpi-row');
+const overallPct = SHIPMENTS.total_items ? Math.round(100 * SHIPMENTS.total_completed / SHIPMENTS.total_items) : 0;
+const kpis = [
+  { label: 'Active shipments', value: fmt(SHIPMENTS.shipment_count) },
+  { label: 'Items completed', value: fmt(SHIPMENTS.total_completed) },
+  { label: 'Items remaining', value: fmt(SHIPMENTS.total_items - SHIPMENTS.total_completed) },
+  { label: 'Overall progress', value: overallPct + '%' },
+];
+kpis.forEach(k => {
+  const tile = document.createElement('div');
+  tile.className = 'kpi-tile';
+  const label = document.createElement('p');
+  label.className = 'kpi-label';
+  label.textContent = k.label;
+  const value = document.createElement('p');
+  value.className = 'kpi-value';
+  value.textContent = k.value;
+  tile.appendChild(label);
+  tile.appendChild(value);
+  kpiRow.appendChild(tile);
+});
+
+const tbody = document.getElementById('shipments-tbody');
+SHIPMENTS.shipments.forEach(s => {
+  const pct = s.total ? Math.round(100 * s.completed / s.total) : 0;
+
+  const tr = document.createElement('tr');
+
+  const code = document.createElement('td');
+  code.className = 'code';
+  code.textContent = s.code;
+
+  const count = document.createElement('td');
+  count.className = 'num';
+  count.textContent = fmt(s.completed) + ' / ' + fmt(s.total);
+
+  const progress = document.createElement('td');
+  const cell = document.createElement('div');
+  cell.className = 'progress-cell';
+  const track = document.createElement('div');
+  track.className = 'progress-track';
+  const fill = document.createElement('div');
+  fill.className = 'progress-fill';
+  fill.style.width = pct + '%';
+  track.appendChild(fill);
+  const pctLabel = document.createElement('span');
+  pctLabel.className = 'progress-pct';
+  pctLabel.textContent = pct + '%';
+  cell.appendChild(track);
+  cell.appendChild(pctLabel);
+  progress.appendChild(cell);
+
+  tr.appendChild(code);
+  tr.appendChild(count);
+  tr.appendChild(progress);
+  tbody.appendChild(tr);
+});
+
+if (SHIPMENTS.shipments.length === 0) {
+  const tr = document.createElement('tr');
+  const td = document.createElement('td');
+  td.colSpan = 3;
+  td.textContent = 'No shipments with recent activity.';
+  td.style.color = 'var(--text-muted)';
+  tr.appendChild(td);
+  tbody.appendChild(tr);
+}
+</script>
