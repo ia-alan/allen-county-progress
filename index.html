@@ -111,16 +111,6 @@
   td.code a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--border); }
   td.code a:hover { border-bottom-style: solid; }
 
-  .lifetime-banner {
-    text-align: center;
-    margin-bottom: 24px;
-    padding: 14px 0;
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-  }
-  .lifetime-value { font-size: 20px; font-weight: 700; margin-right: 8px; }
-  .lifetime-label { font-size: 13px; color: var(--text-secondary); }
-
   .progress-cell { display: flex; align-items: center; gap: 10px; min-width: 180px; }
   .progress-track {
     flex: 1;
@@ -163,11 +153,6 @@
   <p class="subtitle">Digitization progress by shipment — updated by the Internet Archive Indiana scanning team (<span id="snapshot-date"></span>)</p>
 </header>
 
-<div class="lifetime-banner">
-  <span id="lifetime-value" class="lifetime-value"></span>
-  <span class="lifetime-label">items completed for Allen County since <span id="lifetime-year"></span></span>
-</div>
-
 <section class="kpi-row" id="kpi-row"></section>
 
 <div class="card">
@@ -190,7 +175,6 @@
 <div class="card about">
   <h2>About this dashboard</h2>
   <p>"Completed" means an item has finished digitization and review and is available online. "Total" is the full number of items in that shipment.</p>
-  <p>The lifetime count above the table covers every item completed for Allen County across all shipments, not just the ones shown below. It may be a slight undercount for a small number of older items that finished processing but aren't showing up in search yet — the true number is at least this high.</p>
   <p>This is a snapshot from the most recent update, not a live feed — check back for the latest numbers.</p>
   <p>Questions about a specific shipment? Reach out to your Internet Archive contact.</p>
 </div>
@@ -198,14 +182,12 @@
 <footer>Allen County Public Library × Internet Archive</footer>
 
 <script>
-const SHIPMENTS = {"generated_note":"Snapshot of archive.org metadata for collection:allen_county, grouped by shiptracking, including stub items recovered via direct identifier discovery where possible","active_window_days":90,"shipment_count":13,"total_items":765,"total_completed":634,"lifetime_completed":26034,"lifetime_since_year":"2008","shipments":[{"code":"SDGSF","total":121,"completed":3,"discovery":"enumerated","last_activity":"2026-08-28"},{"code":"MERWIN","total":54,"completed":43,"discovery":"enumerated","last_activity":"2026-08-29"},{"code":"JORDAN","total":78,"completed":76,"discovery":"enumerated","last_activity":"2026-08-24"},{"code":"LEACH","total":54,"completed":54,"discovery":"enumerated","last_activity":"2026-08-24"},{"code":"HUTCH","total":66,"completed":66,"discovery":"enumerated","last_activity":"2026-07-22"},{"code":"CRIPEC","total":55,"completed":55,"discovery":"enumerated","last_activity":"2026-08-03"},{"code":"LAGER","total":31,"completed":31,"discovery":"enumerated","last_activity":"2026-07-23"},{"code":"LUCILLEG","total":30,"completed":30,"discovery":"enumerated","last_activity":"2026-06-03"},{"code":"NUNNELEY","total":79,"completed":79,"discovery":"enumerated","last_activity":"2026-07-20"},{"code":"PETTYP","total":20,"completed":20,"discovery":"enumerated","last_activity":"2026-06-04"},{"code":"ACGC2602","total":48,"completed":48,"discovery":"indexed-only","last_activity":"2026-08-12"},{"code":"ACGC2601","total":37,"completed":37,"discovery":"indexed-only","last_activity":"2026-07-09"},{"code":"JASPERCS","total":92,"completed":92,"discovery":"indexed-only","last_activity":"2026-08-19"}]};
+const SHIPMENTS = {"generated_note":"Snapshot of archive.org metadata for collection:allen_county, grouped by shiptracking, including stub items recovered via direct identifier discovery where possible","active_window_days":90,"shipment_count":13,"total_items":765,"total_completed":634,"shipments":[{"code":"SDGSF","total":121,"completed":3,"discovery":"enumerated","last_activity":"2026-08-28"},{"code":"MERWIN","total":54,"completed":43,"discovery":"enumerated","last_activity":"2026-08-29"},{"code":"JORDAN","total":78,"completed":76,"discovery":"enumerated","last_activity":"2026-08-24"},{"code":"LEACH","total":54,"completed":54,"discovery":"enumerated","last_activity":"2026-08-24"},{"code":"HUTCH","total":66,"completed":66,"discovery":"enumerated","last_activity":"2026-07-22"},{"code":"CRIPEC","total":55,"completed":55,"discovery":"enumerated","last_activity":"2026-08-03"},{"code":"LAGER","total":31,"completed":31,"discovery":"enumerated","last_activity":"2026-07-23"},{"code":"LUCILLEG","total":30,"completed":30,"discovery":"enumerated","last_activity":"2026-06-03"},{"code":"NUNNELEY","total":79,"completed":79,"discovery":"enumerated","last_activity":"2026-07-20"},{"code":"PETTYP","total":20,"completed":20,"discovery":"enumerated","last_activity":"2026-06-04"},{"code":"ACGC2602","total":48,"completed":48,"discovery":"indexed-only","last_activity":"2026-08-12"},{"code":"ACGC2601","total":37,"completed":37,"discovery":"indexed-only","last_activity":"2026-07-09"},{"code":"JASPERCS","total":92,"completed":92,"discovery":"indexed-only","last_activity":"2026-08-19"}]};
 const SNAPSHOT_DATE = "August 31, 2026";
 
 const fmt = n => n.toLocaleString('en-US');
 
 document.getElementById('snapshot-date').textContent = SNAPSHOT_DATE;
-document.getElementById('lifetime-value').textContent = fmt(SHIPMENTS.lifetime_completed || 0);
-document.getElementById('lifetime-year').textContent = SHIPMENTS.lifetime_since_year || '—';
 
 const kpiRow = document.getElementById('kpi-row');
 const overallPct = SHIPMENTS.total_items ? Math.round(100 * SHIPMENTS.total_completed / SHIPMENTS.total_items) : 0;
