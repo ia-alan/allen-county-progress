@@ -309,27 +309,12 @@ def build_shipments_data(items):
     total_items = sum(s["total"] for s in active)
     total_completed = sum(s["completed"] for s in active)
 
-    # Lifetime, collection-wide total — every item across every shiptracking
-    # code and every year, not just the active window above. Computed from
-    # the same bulk fetch (no extra API calls). This is a floor, not an exact
-    # count: a small number of already-completed items can stay flagged
-    # noindex:true and invisible to search forever (confirmed directly on at
-    # least one real item), so the true lifetime total is >= this number.
-    lifetime_completed = sum(1 for it in items if it.get("repub_state") == "19")
-    lifetime_years = [
-        it["publicdate"][:4] for it in items
-        if it.get("repub_state") == "19" and it.get("publicdate") and it["publicdate"][:4].isdigit()
-    ]
-    lifetime_since_year = min(lifetime_years) if lifetime_years else None
-
     return {
         "generated_note": "Snapshot of archive.org metadata for collection:allen_county, grouped by shiptracking, including stub items recovered via direct identifier discovery where possible",
         "active_window_days": ACTIVE_WINDOW_DAYS,
         "shipment_count": len(active),
         "total_items": total_items,
         "total_completed": total_completed,
-        "lifetime_completed": lifetime_completed,
-        "lifetime_since_year": lifetime_since_year,
         "shipments": active,
     }
 
@@ -369,7 +354,7 @@ def main():
     data = build_shipments_data(items)
     snapshot_date = date.today().strftime("%B %-d, %Y")
 
-    required_keys = {"active_window_days", "shipment_count", "total_items", "total_completed", "lifetime_completed", "lifetime_since_year", "shipments"}
+    required_keys = {"active_window_days", "shipment_count", "total_items", "total_completed", "shipments"}
     missing = required_keys - data.keys()
     if missing:
         print(f"Refusing to write site: built data is missing expected keys: {sorted(missing)}")
@@ -384,7 +369,6 @@ def main():
     print("Done. Site data updated:")
     print(f"  Active shipments (last {ACTIVE_WINDOW_DAYS} days): {data['shipment_count']}")
     print(f"  Items completed / total: {data['total_completed']:,} / {data['total_items']:,}")
-    print(f"  Lifetime items completed (all shiptracking codes, since {data['lifetime_since_year']}): {data['lifetime_completed']:,}")
     print(f"  Snapshot date: {snapshot_date}")
     for s in data["shipments"]:
         flag = "" if s["discovery"] == "enumerated" else "  (indexed-only, may undercount stubs)"
