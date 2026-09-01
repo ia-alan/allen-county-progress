@@ -1,0 +1,16 @@
+{
+  "_comment": "Friendly, partner-readable names for shipment tracking codes. Keys starting with _ are ignored by the scripts. Every name below was derived from the actual titles of the items in that shipment on archive.org, not invented -- but they are partner-facing, so correct anything that does not match how Allen County refers to these collections. A code with no entry here simply falls back to showing the raw code.",
+  "CRIPEC": "Karen Cripe Genealogy Collection",
+  "HUTCH": "Hutchison Genealogy Collection",
+  "JASPERCS": "Jasper County Schools Records",
+  "JORDAN": "Vivian Jordan Genealogical Records",
+  "LAGER": "Lager Family Genealogy",
+  "LEACH": "Betty Leach Genealogy Research",
+  "LUCILLEG": "Lucille Keller Green Collection",
+  "MERWIN": "Merwin Family Research Collection",
+  "NUNNELEY": "Mary R. M. Nunneley Collection",
+  "PETTYP": "Pettypool Family Collection",
+  "SDGSF": "San Diego Genealogical Society Families",
+  "ACGC2601": "School Yearbooks (batch 2601)",
+  "ACGC2602": "School Yearbooks (batch 2602)"
+}

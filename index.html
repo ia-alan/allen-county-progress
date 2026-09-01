@@ -108,6 +108,7 @@
   tbody td { padding: 9px 10px; border-bottom: 1px solid var(--gridline); color: var(--text-primary); }
   tbody tr:hover { background: var(--series-1-wash); }
   td.code { font-weight: 600; }
+  td.code .code-sub { display: block; font-weight: 400; font-size: 11px; color: var(--text-muted); opacity: 0.7; margin-top: 3px; letter-spacing: 0.04em; }
   td.code a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--border); }
   td.code a:hover { border-bottom-style: solid; }
 
@@ -157,7 +158,7 @@
 
 <div class="card">
   <h2>Shipments in progress</h2>
-  <p class="card-sub">Each row is one shipment, identified by its tracking code — click a code to view that shipment's items on archive.org. Shipments with no recent activity fall off this list once they've been complete for a while.</p>
+  <p class="card-sub">Each row is one shipment, with its Internet Archive tracking code underneath — click a name to view that shipment's items on archive.org. Shipments with no recent activity fall off this list once they've been complete for a while.</p>
   <div class="chart-scroll">
     <table id="shipments-table">
       <thead>
@@ -182,7 +183,7 @@
 <footer>Allen County Public Library × Internet Archive</footer>
 
 <script>
-const SHIPMENTS = {"generated_note":"Snapshot of archive.org metadata for collection:allen_county, grouped by shiptracking, including stub items recovered via direct identifier discovery where possible","active_window_days":90,"shipment_count":13,"total_items":765,"total_completed":638,"shipments":[{"code":"SDGSF","total":121,"completed":3,"discovery":"enumerated","last_activity":"2026-08-28"},{"code":"MERWIN","total":54,"completed":47,"discovery":"enumerated","last_activity":"2026-09-01"},{"code":"JORDAN","total":78,"completed":76,"discovery":"enumerated","last_activity":"2026-08-24"},{"code":"LEACH","total":54,"completed":54,"discovery":"enumerated","last_activity":"2026-08-24"},{"code":"HUTCH","total":66,"completed":66,"discovery":"enumerated","last_activity":"2026-07-22"},{"code":"CRIPEC","total":55,"completed":55,"discovery":"enumerated","last_activity":"2026-08-03"},{"code":"LAGER","total":31,"completed":31,"discovery":"enumerated","last_activity":"2026-07-23"},{"code":"LUCILLEG","total":30,"completed":30,"discovery":"enumerated","last_activity":"2026-06-03"},{"code":"NUNNELEY","total":79,"completed":79,"discovery":"enumerated","last_activity":"2026-07-20"},{"code":"PETTYP","total":20,"completed":20,"discovery":"enumerated","last_activity":"2026-06-04"},{"code":"ACGC2602","total":48,"completed":48,"discovery":"indexed-only","last_activity":"2026-08-12"},{"code":"ACGC2601","total":37,"completed":37,"discovery":"indexed-only","last_activity":"2026-07-09"},{"code":"JASPERCS","total":92,"completed":92,"discovery":"indexed-only","last_activity":"2026-08-19"}]};
+const SHIPMENTS = {"generated_note":"Snapshot of archive.org metadata for collection:allen_county, grouped by shiptracking, including stub items recovered via direct identifier discovery where possible","active_window_days":90,"shipment_count":12,"total_items":735,"total_completed":608,"unresolved_probes":0,"shipments":[{"code":"SDGSF","name":"San Diego Genealogical Society Families","total":121,"completed":3,"discovery":"enumerated","unresolved":0,"last_activity":"2026-08-28"},{"code":"MERWIN","name":"Merwin Family Research Collection","total":54,"completed":47,"discovery":"enumerated","unresolved":0,"last_activity":"2026-09-01"},{"code":"JORDAN","name":"Vivian Jordan Genealogical Records","total":78,"completed":76,"discovery":"enumerated","unresolved":0,"last_activity":"2026-08-24"},{"code":"LEACH","name":"Betty Leach Genealogy Research","total":54,"completed":54,"discovery":"enumerated","unresolved":0,"last_activity":"2026-08-24"},{"code":"HUTCH","name":"Hutchison Genealogy Collection","total":66,"completed":66,"discovery":"enumerated","unresolved":0,"last_activity":"2026-07-22"},{"code":"CRIPEC","name":"Karen Cripe Genealogy Collection","total":55,"completed":55,"discovery":"enumerated","unresolved":0,"last_activity":"2026-08-03"},{"code":"LAGER","name":"Lager Family Genealogy","total":31,"completed":31,"discovery":"enumerated","unresolved":0,"last_activity":"2026-07-23"},{"code":"NUNNELEY","name":"Mary R. M. Nunneley Collection","total":79,"completed":79,"discovery":"enumerated","unresolved":0,"last_activity":"2026-07-20"},{"code":"PETTYP","name":"Pettypool Family Collection","total":20,"completed":20,"discovery":"enumerated","unresolved":0,"last_activity":"2026-06-04"},{"code":"ACGC2602","name":"School Yearbooks (batch 2602)","total":48,"completed":48,"discovery":"indexed-only","unresolved":0,"last_activity":"2026-08-12"},{"code":"ACGC2601","name":"School Yearbooks (batch 2601)","total":37,"completed":37,"discovery":"indexed-only","unresolved":0,"last_activity":"2026-07-09"},{"code":"JASPERCS","name":"Jasper County Schools Records","total":92,"completed":92,"discovery":"indexed-only","unresolved":0,"last_activity":"2026-08-19"}]};
 const SNAPSHOT_DATE = "September 1, 2026";
 
 const fmt = n => n.toLocaleString('en-US');
@@ -223,8 +224,14 @@ SHIPMENTS.shipments.forEach(s => {
   codeLink.href = 'https://archive.org/search?query=' + encodeURIComponent('shiptracking:' + s.code);
   codeLink.target = '_blank';
   codeLink.rel = 'noopener noreferrer';
-  codeLink.textContent = s.code;
+  codeLink.textContent = s.name || s.code;
   code.appendChild(codeLink);
+  if (s.name) {
+    const sub = document.createElement('span');
+    sub.className = 'code-sub';
+    sub.textContent = s.code;
+    code.appendChild(sub);
+  }
 
   const count = document.createElement('td');
   count.className = 'num';
