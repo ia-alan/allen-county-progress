@@ -42,6 +42,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 SITE_PATH = "index.html"
 SEEDS_PATH = "allen_county_stub_seeds.json"
 NAMES_PATH = "allen_county_shipment_names.json"       # optional {CODE: "Friendly name"} map; see shipment_names.example.json
+ENUM_CACHE_PATH = "allen_county_enum_cache.json"  # persists settled stub-discovery numbers across runs -- see README.md "Enumeration cache"
 
 # Guard rails for the write step (see sanity_check below).
 MAX_SHRINK_PCT = 40                  # refuse to publish if total items drop more than this vs the current file
@@ -72,7 +73,9 @@ def fetch_scrape_page(params, retries=4):
 
 
 def fetch_all_items():
-    print("Fetching searchable items from archive.org (collection:allen_county)...")
+    """Full-collection pull, only used with --full-scan. See fetch_discovery_items
+    and fetch_items_for_codes for the default, much faster path."""
+    print("Fetching EVERY searchable item from archive.org (collection:allen_county) -- full scan, the slow path...")
     items = []
     cursor = None
     page = 0
@@ -98,6 +101,83 @@ def fetch_all_items():
             break
         time.sleep(0.2)
     return items
+
+
+def fetch_discovery_items(now):
+    """
+    Phase A of the default path: one cheap query for items whose
+    republisher_date OR publicdate falls within ACTIVE_WINDOW_DAYS --
+    exactly the two signals "active" is computed from elsewhere in this
+    script. Returns the set of distinct group codes seen. See the module
+    docstring for why this can't hide a shipment that would otherwise
+    qualify.
+    """
+    cutoff = now - timedelta(days=ACTIVE_WINDOW_DAYS)
+    q = (f"{QUERY} AND (republisher_date:[{cutoff.strftime('%Y%m%d%H%M%S')} TO 99991231235959] "
+         f"OR publicdate:[{cutoff.strftime('%Y-%m-%d')} TO 2099-12-31])")
+    print(f"Discovering shiptracking codes with activity in the last {ACTIVE_WINDOW_DAYS} days...")
+    items = []
+    cursor = None
+    page = 0
+    while True:
+        page += 1
+        params = {"q": q, "count": "10000", "fields": "identifier,shiptracking"}
+        if cursor:
+            params["cursor"] = cursor
+        data = fetch_scrape_page(params)
+        page_items = data.get("items", [])
+        items.extend(page_items)
+        print(f"  discovery page {page}: {len(items):,} items", flush=True)
+        cursor = data.get("cursor")
+        if not cursor or not page_items:
+            break
+        time.sleep(0.2)
+    codes = {it["shiptracking"] for it in items if it.get("shiptracking")}
+    print(f"  found {len(codes)} recently-active shiptracking code(s)")
+    return codes
+
+
+def fetch_items_for_codes(codes):
+    """
+    Phase B of the default path: for each candidate code, pull its COMPLETE
+    indexed item set with its own targeted query -- not date-restricted --
+    so pattern-detection and totals are exactly as accurate as scanning the
+    whole collection would produce. Codes are fetched concurrently since
+    each query is independent and small.
+    """
+    if not codes:
+        return []
+    print(f"Fetching complete item history for {len(codes)} shiptracking code(s)...")
+
+    def fetch_one(code):
+        results = []
+        cursor = None
+        while True:
+            params = {"q": f"{QUERY} AND shiptracking:{code}", "count": "1000", "fields": FIELDS}
+            if cursor:
+                params["cursor"] = cursor
+            data = fetch_scrape_page(params)
+            page_items = data.get("items", [])
+            results.extend(page_items)
+            cursor = data.get("cursor")
+            if not cursor or not page_items:
+                break
+        return results
+
+    all_items = []
+    done = 0
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        futures = {ex.submit(fetch_one, code): code for code in sorted(codes)}
+        for fut in as_completed(futures):
+            code = futures[fut]
+            try:
+                all_items.extend(fut.result())
+            except Exception as e:
+                print(f"  WARNING: could not fetch items for {code}: {e} -- this shipment may be missing this run.")
+            done += 1
+            if done % 10 == 0 or done == len(codes):
+                print(f"  fetched {done}/{len(codes)} codes ({len(all_items):,} items so far)", flush=True)
+    return all_items
 
 
 def parse_republisher_date(value):
@@ -157,30 +237,62 @@ def format_candidate_id(prefix, n, width):
     return prefix + str(n)
 
 
-def enumerate_full_shipment(prefix, known_numbers, batch_size=15, max_extra_batches=8):
+def _is_settled(entry):
     """
-    known_numbers: {number: {"identifier", "repub_state", "publicdate"}} already known.
-    Returns the merged full set including any newly-discovered stub items.
+    True for a number that will never need re-probing: a confirmed-absent
+    slot (None), or a real item that has finished digitization
+    (COMPLETE_FIELD == COMPLETE_VALUE, which doesn't regress). A found-but-
+    still-in-progress item is deliberately NOT settled -- it must keep
+    being re-probed until it actually finishes, or its progress would
+    freeze in the cache.
     """
+    return entry is None or (isinstance(entry, dict) and entry.get("repub_state") == "19")
+
+
+def enumerate_full_shipment(prefix, known_numbers, cached_resolved=None, batch_size=15, max_extra_batches=8):
+    """
+    known_numbers: {number: {"identifier", "repub_state", "publicdate"}}
+        from THIS run's fresh search index.
+    cached_resolved: {number: entry_or_None} of numbers already conclusively
+        settled as of a PRIOR run (see _is_settled) -- skipped on reprobe.
+
+    Returns (found, settled, cache_hits, unresolved):
+        found      -- {number: entry} for every real item now known.
+        settled    -- {number: entry_or_None}, the subset worth caching for
+                       next run (see _is_settled).
+        cache_hits -- how many numbers were resolved from the cache instead
+                       of a network probe, for the summary print.
+        unresolved -- probes that FAILED (network/throttling) -- not the
+                      same as a number being confirmed absent.
+
+    Walking past the highest known number to look for brand-new hidden
+    items always runs here, regardless of the cache -- that check is the
+    one thing this whole pipeline exists to guarantee.
+    """
+    cached_resolved = cached_resolved or {}
     numbers = sorted(known_numbers.keys())
     width = detect_padding_width([(n, known_numbers[n]["identifier"][len(prefix):]) for n in numbers])
     hi = numbers[-1]
 
-    result = dict(known_numbers)
-    to_probe = [n for n in range(1, hi + 1) if n not in result]
+    found = dict(known_numbers)
+    settled = {n: e for n, e in cached_resolved.items() if _is_settled(e) and n <= hi}
+    for n, e in settled.items():
+        if isinstance(e, dict) and n not in found:
+            found[n] = e
+
+    to_probe = [n for n in range(1, hi + 1) if n not in found and n not in settled]
+    # Numbers resolved from the cache instead of a fresh probe, for the summary print.
+    cache_hits = sum(1 for n in range(1, hi + 1) if n not in known_numbers and n in settled)
 
     unresolved = 0
 
     def probe(n):
         """
-        Returns (n, data_or_None, ok).
-
-        ok=False means the fetch FAILED, which is NOT the same as the item not
-        existing. A missing identifier returns HTTP 200 with an empty body
-        (-> None, ok=True); only a network error or a throttled request yields
-        "FAIL". Treating those two the same silently SHRINKS the total -- the
-        exact undercount this whole pipeline exists to prevent -- and with six
-        workers probing hundreds of ids, throttling is the likely failure.
+        Returns (n, data_or_None, ok). ok=False means the fetch FAILED, which
+        is NOT the same as the item not existing -- a missing identifier
+        returns HTTP 200 with an empty body (-> None, ok=True); only a
+        network error or throttled request yields "FAIL". Collapsing those
+        two silently shrinks the total.
         """
         ident = format_candidate_id(prefix, n, width)
         data = fetch_metadata(ident)
@@ -198,10 +310,17 @@ def enumerate_full_shipment(prefix, known_numbers, batch_size=15, max_extra_batc
                 n, data, ok = fut.result()
                 if not ok:
                     unresolved += 1
-                elif data:
-                    result[n] = data
+                    continue
+                if data:
+                    found[n] = data
+                    if _is_settled(data):
+                        settled[n] = data
+                else:
+                    settled[n] = None  # confirmed absent -- safe to cache
 
-    # extend past the highest known number in parallel batches, stop once a whole batch misses
+    # Extend past the highest known number in parallel batches, stop once a
+    # whole batch misses. This is NEVER skipped by the cache -- it's how a
+    # genuinely new hidden item beyond the known ceiling gets caught.
     n = hi + 1
     for _ in range(max_extra_batches):
         batch = list(range(n, n + batch_size))
@@ -212,14 +331,19 @@ def enumerate_full_shipment(prefix, known_numbers, batch_size=15, max_extra_batc
                 bn, data, ok = fut.result()
                 if not ok:
                     unresolved += 1
-                elif data:
-                    result[bn] = data
+                    continue
+                if data:
+                    found[bn] = data
                     hits += 1
+                    if _is_settled(data):
+                        settled[bn] = data
+                else:
+                    settled[bn] = None
         n += batch_size
         if hits == 0:
             break
 
-    return result, unresolved
+    return found, settled, cache_hits, unresolved
 
 
 def find_enumerable_candidates(indexed_by_code):
@@ -286,9 +410,30 @@ def load_names():
     return _load_json_map(NAMES_PATH, str, "name")
 
 
+def load_enum_cache():
+    """{code: {"n": entry_or_None, ...}} of conclusively settled numbers as of the last successful run."""
+    try:
+        with open(ENUM_CACHE_PATH, encoding="utf-8") as f:
+            raw = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError as e:
+        print(f"  WARNING: {ENUM_CACHE_PATH} is not valid JSON ({e}) -- starting with an empty cache.")
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def save_enum_cache(cache):
+    with open(ENUM_CACHE_PATH, "w", encoding="utf-8") as f:
+        json.dump(cache, f, separators=(",", ":"))
+
+
 # ---------- Aggregation ----------
 
-def build_shipments_data(items):
+def build_shipments_data(items, seeds=None):
+    if seeds is None:
+        seeds = load_seeds()
+
     indexed_by_code = defaultdict(list)
     for it in items:
         code = it.get("shiptracking")
@@ -297,7 +442,6 @@ def build_shipments_data(items):
 
     candidates = find_enumerable_candidates(indexed_by_code)
 
-    seeds = load_seeds()
     for code, seed in seeds.items():
         if code not in candidates:
             prefix = seed["prefix"]
@@ -318,13 +462,21 @@ def build_shipments_data(items):
     if names:
         print(f"Loaded {len(names)} friendly shipment name(s) from {NAMES_PATH}.")
 
+    enum_cache = load_enum_cache()
+    new_enum_cache = {}
+
     groups = {}
     total_unresolved = 0
+    total_cache_hits = 0
 
     # Codes with a detectable/seedable pattern: enumerate the true full set.
     for code, (prefix, numbers) in candidates.items():
-        print(f"  enumerating {code} (prefix={prefix})...", flush=True)
-        full, unresolved = enumerate_full_shipment(prefix, numbers)
+        cached = {int(k): v for k, v in enum_cache.get(code, {}).items()}
+        cache_note = f" ({len(cached)} settled in cache)" if cached else ""
+        print(f"  enumerating {code} (prefix={prefix}){cache_note}...", flush=True)
+        full, settled, cache_hits, unresolved = enumerate_full_shipment(prefix, numbers, cached_resolved=cached)
+        new_enum_cache[code] = {str(n): e for n, e in settled.items()}
+        total_cache_hits += cache_hits
         total_unresolved += unresolved
         if unresolved:
             print(f"    WARNING: {unresolved} identifier probe(s) for {code} could not be "
@@ -350,6 +502,9 @@ def build_shipments_data(items):
             "discovery": "enumerated",
             "unresolved": unresolved,
         }
+
+    if total_cache_hits:
+        print(f"  (cache avoided re-probing {total_cache_hits} already-settled number(s) this run)")
 
     # Everything else: indexed-only counts (search-based, may undercount hidden stubs).
     for code, entries in indexed_by_code.items():
@@ -405,7 +560,7 @@ def build_shipments_data(items):
         "total_completed": total_completed,
         "unresolved_probes": total_unresolved,
         "shipments": active,
-    }
+    }, new_enum_cache
 
 
 def inject(html, data, snapshot_date):
@@ -500,11 +655,22 @@ def main():
         print(f"Could not find {SITE_PATH} in the current directory.")
         sys.exit(1)
 
-    items = fetch_all_items()
-    if not items:
+    now = datetime.now(timezone.utc)
+    seeds = load_seeds()
+
+    if "--full-scan" in sys.argv:
+        print("--full-scan given: pulling the ENTIRE collection (the slow, exhaustive audit path).")
+        items = fetch_all_items()
+    else:
+        discovered_codes = fetch_discovery_items(now)
+        target_codes = discovered_codes | set(seeds.keys())
+        items = fetch_items_for_codes(target_codes)
+
+    if not items and not seeds:
         print("archive.org returned no items at all -- refusing to write. Nothing was changed.")
         sys.exit(1)
-    data = build_shipments_data(items)
+
+    data, new_enum_cache = build_shipments_data(items, seeds=seeds)
     snapshot_date = date.today().strftime("%B %-d, %Y")
 
     required_keys = {"active_window_days", "shipment_count", "total_items", "total_completed", "shipments"}
@@ -520,6 +686,11 @@ def main():
 
     with open(SITE_PATH, "w", encoding="utf-8") as f:
         f.write(new_html)
+
+    # Deferred until AFTER a successful write, so a refused/failed run never
+    # pollutes the enumeration cache with data from a snapshot nobody
+    # actually published.
+    save_enum_cache(new_enum_cache)
 
     print()
     print("Done. Site data updated:")
