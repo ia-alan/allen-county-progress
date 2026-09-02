@@ -482,7 +482,23 @@ def build_shipments_data(items, seeds=None):
             print(f"    WARNING: {unresolved} identifier probe(s) for {code} could not be "
                   f"resolved (network error or throttling) -- this row may undercount.", flush=True)
         total = len(full)
-        completed = sum(1 for v in full.values() if v.get("repub_state") == "19")
+        # "completed" is deliberately NOT sum(1 for v in full.values() if repub_state == 19).
+        # `full` includes items recovered by direct metadata probing (or, for a seeded code,
+        # found via a single seeded identifier with no search results at all), which can be
+        # complete (repub_state 19) before archive.org's search index has caught up with them
+        # -- a lag of a few days is normal. A partner clicking the shiptracking:<code> search
+        # link on the dashboard would then see fewer items than "completed" claimed, with no
+        # way to know why. Restricting to identifiers that are BOTH recognized by the
+        # enumeration (in `full`) AND actually present in this run's live search results
+        # (indexed_by_code) keeps "completed" equal to what that link shows right now -- and
+        # never exceeds `total`, since a stray non-enumerable identifier search sometimes
+        # returns for a code (e.g. a cover/index file with no trailing number) is excluded on
+        # both sides. The item still gets counted as soon as archive.org reindexes it.
+        full_identifiers = {v["identifier"] for v in full.values()}
+        completed = sum(
+            1 for e in indexed_by_code.get(code, [])
+            if e.get("repub_state") == "19" and e.get("identifier") in full_identifiers
+        )
         last_republish = None
         last_added = None
         for v in full.values():
