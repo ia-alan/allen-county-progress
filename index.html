@@ -112,6 +112,19 @@
   td.code a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--border); }
   td.code a:hover { border-bottom-style: solid; }
 
+  .badge-finalizing {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 7px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    vertical-align: middle;
+  }
+
   .progress-cell { display: flex; align-items: center; gap: 10px; min-width: 180px; }
   .progress-track {
     flex: 1;
@@ -173,6 +186,23 @@
   </div>
 </div>
 
+<div class="card">
+  <h2>Recently completed</h2>
+  <p class="card-sub">The most recently finished shipments. Older completions are dropped from this list to keep it current — the full history isn't lost, just not shown here.</p>
+  <div class="chart-scroll">
+    <table id="completed-table">
+      <thead>
+        <tr>
+          <th>Collection</th>
+          <th class="num">Completed / Total</th>
+          <th>Progress</th>
+        </tr>
+      </thead>
+      <tbody id="completed-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
 <div class="card about">
   <h2>About this dashboard</h2>
   <p>"Completed" means an item has finished digitization and review and is available online. "Total" is the full number of items in that shipment.</p>
@@ -212,8 +242,7 @@ kpis.forEach(k => {
   kpiRow.appendChild(tile);
 });
 
-const tbody = document.getElementById('shipments-tbody');
-SHIPMENTS.shipments.forEach(s => {
+function renderShipmentRow(tbody, s) {
   const pct = s.total ? Math.round(100 * s.completed / s.total) : 0;
 
   const tr = document.createElement('tr');
@@ -226,10 +255,16 @@ SHIPMENTS.shipments.forEach(s => {
   codeLink.rel = 'noopener noreferrer';
   codeLink.textContent = s.name || s.code;
   code.appendChild(codeLink);
+  if (s.finalizing) {
+    const badge = document.createElement('span');
+    badge.className = 'badge-finalizing';
+    badge.textContent = 'Finalizing';
+    code.appendChild(badge);
+  }
   if (s.name) {
     const sub = document.createElement('span');
     sub.className = 'code-sub';
-    sub.textContent = s.code;
+    sub.textContent = s.code + (s.completed_date ? ' — completed ' + s.completed_date : '');
     code.appendChild(sub);
   }
 
@@ -257,15 +292,28 @@ SHIPMENTS.shipments.forEach(s => {
   tr.appendChild(count);
   tr.appendChild(progress);
   tbody.appendChild(tr);
-});
+}
 
-if (SHIPMENTS.shipments.length === 0) {
+function renderEmptyRow(tbody, message) {
   const tr = document.createElement('tr');
   const td = document.createElement('td');
   td.colSpan = 3;
-  td.textContent = 'No shipments with recent activity.';
+  td.textContent = message;
   td.style.color = 'var(--text-muted)';
   tr.appendChild(td);
   tbody.appendChild(tr);
+}
+
+const tbody = document.getElementById('shipments-tbody');
+SHIPMENTS.shipments.forEach(s => renderShipmentRow(tbody, s));
+if (SHIPMENTS.shipments.length === 0) {
+  renderEmptyRow(tbody, 'No shipments with recent activity.');
+}
+
+const completedTbody = document.getElementById('completed-tbody');
+const completedShipments = SHIPMENTS.completed_shipments || [];
+completedShipments.forEach(s => renderShipmentRow(completedTbody, s));
+if (completedShipments.length === 0) {
+  renderEmptyRow(completedTbody, 'No completed shipments yet.');
 }
 </script>

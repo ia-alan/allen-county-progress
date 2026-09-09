@@ -24,7 +24,13 @@ only be found this way if you seed one known identifier for them in
 allen_county_stub_seeds.json — see that file for the format.
 
 A shipment counts as "active" if it has had a completion (repub_state -> 19)
-or a newly-added stub item in the last 90 days.
+or a newly-added stub item in the last 90 days, AND is not yet fully complete
+(completed < total). A shipment that reaches completed == total is recorded
+once into allen_county_completed_history.json (permanent) and drops out of
+Active; the site shows only the COMPLETED_DISPLAY_COUNT most recently
+completed shipments, not the whole history. The run in which a shipment's
+final item finishes still shows it in Active one last time, flagged
+"finalizing", before it settles into history-only on the next run.
 
 Everything else in the HTML (layout, styling) is left untouched.
 """
@@ -43,6 +49,8 @@ SITE_PATH = "index.html"
 SEEDS_PATH = "allen_county_stub_seeds.json"
 NAMES_PATH = "allen_county_shipment_names.json"       # optional {CODE: "Friendly name"} map; see shipment_names.example.json
 ENUM_CACHE_PATH = "allen_county_enum_cache.json"  # persists settled stub-discovery numbers across runs -- see README.md "Enumeration cache"
+COMPLETED_HISTORY_PATH = "allen_county_completed_history.json"  # persists every shipment once it hits completed==total, so the "recently completed" list survives shipments aging out of the active window
+COMPLETED_DISPLAY_COUNT = 7  # only the N most recently completed shipments are ever shown on the site
 
 # Guard rails for the write step (see sanity_check below).
 MAX_SHRINK_PCT = 40                  # refuse to publish if total items drop more than this vs the current file
@@ -428,11 +436,32 @@ def save_enum_cache(cache):
         json.dump(cache, f, separators=(",", ":"))
 
 
+def load_completed_history():
+    """{code: {"name","total","completed","discovery","completed_date"}} for every
+    shipment ever seen at completed==total. Kept indefinitely (it's small); only the
+    COMPLETED_DISPLAY_COUNT most recent are ever shown on the site."""
+    try:
+        with open(COMPLETED_HISTORY_PATH, encoding="utf-8") as f:
+            raw = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError as e:
+        print(f"  WARNING: {COMPLETED_HISTORY_PATH} is not valid JSON ({e}) -- starting with an empty history.")
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def save_completed_history(history):
+    with open(COMPLETED_HISTORY_PATH, "w", encoding="utf-8") as f:
+        json.dump(history, f, separators=(",", ":"))
+
+
 # ---------- Aggregation ----------
 
-def build_shipments_data(items, seeds=None):
+def build_shipments_data(items, seeds=None, prev_shipments=None):
     if seeds is None:
         seeds = load_seeds()
+    prev_by_code = {s["code"]: s for s in (prev_shipments or [])}
 
     indexed_by_code = defaultdict(list)
     for it in items:
@@ -548,11 +577,47 @@ def build_shipments_data(items, seeds=None):
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=ACTIVE_WINDOW_DAYS)
 
+    # A shipment appearing here has had activity in the last ACTIVE_WINDOW_DAYS.
+    # This used to be the entire "active" list, which meant a shipment that
+    # finished long ago could still clutter the dashboard for up to 90 days
+    # after completing, while one that finished 91+ days ago just vanished with
+    # no record. Instead: genuinely in-progress shipments (completed < total)
+    # are shown here as before ("active", unchanged); a shipment that is fully
+    # done is recorded once into COMPLETED_HISTORY_PATH (permanent, keyed by
+    # code, never re-added) and only the COMPLETED_DISPLAY_COUNT most recent
+    # such completions are ever shown, regardless of the activity window.
+    completed_history = load_completed_history()
+
+    # One-time migration shim (a no-op on every later run): a shipment that was
+    # already completed==total in the PREVIOUS snapshot but has since aged out
+    # of this run's activity window entirely won't appear in `groups` at all --
+    # without this, it would be silently lost from completed_history forever
+    # the moment this feature was turned on, rather than just missing the "last
+    # N" display cutoff like an intentionally-aged shipment. Only applies to
+    # codes not already tracked; every code is tracked permanently once seen.
+    for code, prev in prev_by_code.items():
+        if code in completed_history:
+            continue
+        if prev.get("total") and prev["completed"] >= prev["total"]:
+            completed_history[code] = {
+                "name": prev.get("name"),
+                "total": prev["total"],
+                "completed": prev["completed"],
+                "discovery": prev.get("discovery"),
+                "completed_date": prev.get("last_activity") or date.today().strftime("%Y-%m-%d"),
+            }
+
     active = []
+    just_finalized_codes = []
     for code, g in groups.items():
         recent = (g["last_republish"] and g["last_republish"] >= cutoff) or (g["last_added"] and g["last_added"] >= cutoff)
-        if recent:
-            last_dates = [d for d in (g["last_republish"], g["last_added"]) if d]
+        if not recent:
+            continue
+        last_dates = [d for d in (g["last_republish"], g["last_added"]) if d]
+        last_activity = max(last_dates).strftime("%Y-%m-%d") if last_dates else None
+        is_complete = g["total"] > 0 and g["completed"] >= g["total"]
+
+        if not is_complete:
             active.append({
                 "code": code,
                 "name": names.get(code),
@@ -560,13 +625,71 @@ def build_shipments_data(items, seeds=None):
                 "completed": g["completed"],
                 "discovery": g["discovery"],
                 "unresolved": g["unresolved"],
-                "last_activity": max(last_dates).strftime("%Y-%m-%d") if last_dates else None,
+                "last_activity": last_activity,
             })
+            continue
+
+        if code in completed_history:
+            # Already recorded as complete in a prior run -- it has already had
+            # its one appearance in Active with the finalizing badge, and now
+            # lives only in the completed-history list. Nothing to do here.
+            continue
+
+        # First time this code is seen at completed==total: record it permanently.
+        completed_history[code] = {
+            "name": names.get(code),
+            "total": g["total"],
+            "completed": g["completed"],
+            "discovery": g["discovery"],
+            "completed_date": last_activity or date.today().strftime("%Y-%m-%d"),
+        }
+
+        prev = prev_by_code.get(code)
+        was_in_progress_before = prev is not None and prev.get("total") and prev["completed"] < prev["total"]
+        if was_in_progress_before:
+            # This run is the one where the final item finished -- show it one
+            # last time in Active, flagged, before it settles into history-only.
+            just_finalized_codes.append(code)
+            active.append({
+                "code": code,
+                "name": names.get(code),
+                "total": g["total"],
+                "completed": g["completed"],
+                "discovery": g["discovery"],
+                "unresolved": g["unresolved"],
+                "last_activity": last_activity,
+                "finalizing": True,
+            })
+        # else: a code we've never tracked before, already complete the first
+        # time we see it (e.g. this is the first run of history-tracking, or a
+        # correction touched an old shipment) -- backfilled into history above
+        # with no finalizing badge, since we can't claim it "just" finished.
 
     active.sort(key=lambda s: (s["completed"] / s["total"] if s["total"] else 0))
 
-    total_items = sum(s["total"] for s in active)
-    total_completed = sum(s["completed"] for s in active)
+    completed_display = sorted(
+        completed_history.items(), key=lambda kv: kv[1].get("completed_date") or "", reverse=True
+    )[:COMPLETED_DISPLAY_COUNT]
+    completed_shipments = [
+        {
+            "code": code,
+            "name": h.get("name"),
+            "total": h["total"],
+            "completed": h["completed"],
+            "discovery": h.get("discovery"),
+            "completed_date": h.get("completed_date"),
+        }
+        for code, h in completed_display
+    ]
+
+    # Totals cover what's actually rendered (active + the visible completed
+    # rows) so the KPI row and the shrink-guard in sanity_check() measure the
+    # same universe a viewer sees, not the entire unbounded completed_history.
+    total_items = sum(s["total"] for s in active) + sum(s["total"] for s in completed_shipments)
+    total_completed = sum(s["completed"] for s in active) + sum(s["completed"] for s in completed_shipments)
+
+    if just_finalized_codes:
+        print(f"  {len(just_finalized_codes)} shipment(s) just reached 100% complete: {', '.join(just_finalized_codes)}")
 
     return {
         "generated_note": "Snapshot of archive.org metadata for collection:allen_county, grouped by shiptracking, including stub items recovered via direct identifier discovery where possible",
@@ -576,7 +699,8 @@ def build_shipments_data(items, seeds=None):
         "total_completed": total_completed,
         "unresolved_probes": total_unresolved,
         "shipments": active,
-    }, new_enum_cache
+        "completed_shipments": completed_shipments,
+    }, new_enum_cache, completed_history
 
 
 def inject(html, data, snapshot_date):
@@ -686,10 +810,13 @@ def main():
         print("archive.org returned no items at all -- refusing to write. Nothing was changed.")
         sys.exit(1)
 
-    data, new_enum_cache = build_shipments_data(items, seeds=seeds)
+    prev = previous_data(html)
+    data, new_enum_cache, new_completed_history = build_shipments_data(
+        items, seeds=seeds, prev_shipments=(prev or {}).get("shipments", [])
+    )
     snapshot_date = date.today().strftime("%B %-d, %Y")
 
-    required_keys = {"active_window_days", "shipment_count", "total_items", "total_completed", "shipments"}
+    required_keys = {"active_window_days", "shipment_count", "total_items", "total_completed", "shipments", "completed_shipments"}
     missing = required_keys - data.keys()
     if missing:
         print(f"Refusing to write site: built data is missing expected keys: {sorted(missing)}")
@@ -704,9 +831,10 @@ def main():
         f.write(new_html)
 
     # Deferred until AFTER a successful write, so a refused/failed run never
-    # pollutes the enumeration cache with data from a snapshot nobody
-    # actually published.
+    # pollutes the enumeration cache (or the completed-shipment history) with
+    # data from a snapshot nobody actually published.
     save_enum_cache(new_enum_cache)
+    save_completed_history(new_completed_history)
 
     print()
     print("Done. Site data updated:")
@@ -717,8 +845,15 @@ def main():
         flag = "" if s["discovery"] == "enumerated" else "  (indexed-only, may undercount stubs)"
         if s.get("unresolved"):
             flag += f"  ({s['unresolved']} probe(s) unresolved)"
+        if s.get("finalizing"):
+            flag += "  [FINALIZING -- just reached 100%]"
         label = f"{s['code']} - {s['name']}" if s.get("name") else s["code"]
         print(f"    {label:44s} {s['completed']:4d} / {s['total']:4d}{flag}")
+    if data["completed_shipments"]:
+        print(f"  Recently completed (showing {len(data['completed_shipments'])} of {len(new_completed_history)} tracked):")
+        for s in data["completed_shipments"]:
+            label = f"{s['code']} - {s['name']}" if s.get("name") else s["code"]
+            print(f"    {label:44s} {s['completed']:4d} / {s['total']:4d}  (completed {s['completed_date']})")
 
 
 if __name__ == "__main__":
