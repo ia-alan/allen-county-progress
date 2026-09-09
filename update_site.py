@@ -588,6 +588,14 @@ def build_shipments_data(items, seeds=None, prev_shipments=None):
     # such completions are ever shown, regardless of the activity window.
     completed_history = load_completed_history()
 
+    # A name recorded into history at completion time is never touched again by
+    # the code below (it only ever writes a NEW entry once) -- so a name added
+    # or corrected in NAMES_PATH after a shipment already completed would
+    # otherwise never reach the display. Refresh every existing entry's name
+    # from the current map on every run; harmless no-op when nothing changed.
+    for code, h in completed_history.items():
+        h["name"] = names.get(code) or h.get("name")
+
     # One-time migration shim (a no-op on every later run): a shipment that was
     # already completed==total in the PREVIOUS snapshot but has since aged out
     # of this run's activity window entirely won't appear in `groups` at all --
