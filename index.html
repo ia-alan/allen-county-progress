@@ -111,6 +111,7 @@
   td.code .code-sub { display: block; font-weight: 400; font-size: 11px; color: var(--text-muted); opacity: 0.7; margin-top: 3px; letter-spacing: 0.04em; }
   td.code a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--border); }
   td.code a:hover { border-bottom-style: solid; }
+  .estimate-flag { font-weight: 400; opacity: 0.65; cursor: help; }
 
   .badge-finalizing {
     display: inline-block;
@@ -205,7 +206,8 @@
 
 <div class="card about">
   <h2>About this dashboard</h2>
-  <p>"Completed" means an item has finished digitization and review and is available online. "Total" is the full number of items in that shipment.</p>
+  <p>"Completed" means an item has finished digitization and review and is available online. "Total" is the full number of items in that shipment, from the packing manifest when we have one. A total marked <span class="estimate-flag">*</span> is based on what's searchable online right now, and may not count everything already received.</p>
+  <p>A shipment with nothing completed yet but a "received" date shown is in our queue, waiting to be digitized.</p>
   <p>This is a snapshot from the most recent update, not a live feed — check back for the latest numbers.</p>
   <p>Questions about a specific shipment? Reach out to your Internet Archive contact.</p>
 </div>
@@ -264,13 +266,28 @@ function renderShipmentRow(tbody, s) {
   if (s.name) {
     const sub = document.createElement('span');
     sub.className = 'code-sub';
-    sub.textContent = s.code + (s.completed_date ? ' — completed ' + s.completed_date : '');
+    const parts = [s.code];
+    if (s.completed_date) {
+      parts.push('completed ' + s.completed_date);
+    } else if (s.completed === 0 && !s.last_activity && s.received) {
+      parts.push('received ' + s.received + ' — awaiting digitization');
+    } else if (s.pages_completed) {
+      parts.push(fmt(s.pages_completed) + ' pages online');
+    }
+    sub.textContent = parts.join(' — ');
     code.appendChild(sub);
   }
 
   const count = document.createElement('td');
   count.className = 'num';
   count.textContent = fmt(s.completed) + ' / ' + fmt(s.total);
+  if (s.total_confirmed === false) {
+    const est = document.createElement('span');
+    est.className = 'estimate-flag';
+    est.title = "This total is based on what's searchable online right now, and may not count everything already received.";
+    est.textContent = ' *';
+    count.appendChild(est);
+  }
 
   const progress = document.createElement('td');
   const cell = document.createElement('div');

@@ -995,6 +995,7 @@ def build_shipments_data(items, manifest=None, prev_shipments=None):
             "overage": g["overage"],
             "unresolved": g["unresolved"],
             "last_activity": last_activity,
+            "received": m.get("received"),
         }
 
         if not is_complete:
