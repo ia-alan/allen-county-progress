@@ -12,6 +12,12 @@ on:
 permissions:
   contents: write
 
+# Prevents a manual workflow_dispatch run from racing the scheduled run --
+# both push to main, and the loser's push fails, dropping that day's snapshot.
+concurrency:
+  group: update-site-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -29,6 +35,15 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Must list every path update_site.py writes to, not just the site
+          # HTML -- these two names must match ENUM_CACHE_PATH/
+          # COMPLETED_HISTORY_PATH in that script's constants exactly. A
+          # forgotten path here doesn't error -- it just silently resets that
+          # file to empty on every scheduled run, since the Action's checkout
+          # is fresh each time and anything not committed here never
+          # persists. allen_county_shipments.json (the manifest) is
+          # deliberately NOT listed here -- it is human-edited input that
+          # this script only ever reads, never writes.
           git add index.html allen_county_enum_cache.json allen_county_completed_history.json
           if git diff --cached --quiet; then
             echo "No changes to publish."

@@ -1,0 +1,46 @@
+{
+  "_comment": "One entry per shipment. Keys starting with _ are ignored. Replaces the old allen_county_shipment_names.json and allen_county_stub_seeds.json -- both are folded in below.",
+  "_example": {
+    "name": "Friendly, partner-readable name",
+    "identifier_prefix": "smithfam",
+    "number_width": 2,
+    "number_start": 1,
+    "expected_items": 40,
+    "received": "2026-09-15",
+    "closed": false,
+    "notes": "optional, operator-only"
+  },
+  "_fields": {
+    "name": "Partner-facing display name. Falls back to the raw code if omitted.",
+    "identifier_prefix": "The archive.org identifier prefix for this shipment (e.g. 'smithfam' for smithfam01, smithfam02, ...). Only needed to enable direct stub discovery for a shipment that isn't auto-detected.",
+    "number_width": "Zero-padding width of the identifier's number suffix (e.g. 2 for 'smithfam01'). Only needed alongside identifier_prefix for a brand-new shipment with no items yet -- once at least one item exists the width is detected automatically.",
+    "number_start": "First number in the sequence. Defaults to 1.",
+    "expected_items": "Exact item count from the packing list/manifest, if known. This becomes the shipment's total on the dashboard even before any items are digitized -- this is what makes a newly-received shipment show up as '0 / N, awaiting digitization' instead of being invisible until archive.org has something to show.",
+    "received": "Date the shipment arrived, YYYY-MM-DD. Required whenever expected_items is set, so the dashboard can show a brand-new shipment even though it has no activity yet.",
+    "closed": "Set true if the shipment was cancelled/withdrawn and should stop appearing even with expected_items > 0 and no items.",
+    "notes": "Free text, operator-only, never shown to the partner."
+  },
+
+  "CRIPEC": {"name": "Karen Cripe Genealogy Collection"},
+  "HUTCH": {"name": "Hutchison Genealogy Collection"},
+  "JASPERCS": {"name": "Jasper County Schools Records"},
+  "JORDAN": {"name": "Vivian Jordan Genealogical Records"},
+  "LAGER": {"name": "Lager Family Genealogy"},
+  "LEACH": {"name": "Betty Leach Genealogy Research"},
+  "LUCILLEG": {"name": "Lucille Keller Green Collection"},
+  "MERWIN": {"name": "Merwin Family Research Collection"},
+  "NUNNELEY": {"name": "Mary R. M. Nunneley Collection"},
+  "PETTYP": {"name": "Pettypool Family Collection"},
+  "SDGSF": {"name": "San Diego Genealogical Society Families", "identifier_prefix": "sdgsfamilies", "number_width": 2},
+  "ACGC2601": {"name": "School Yearbooks (batch 2601)"},
+  "ACGC2602": {"name": "School Yearbooks (batch 2602)"},
+  "ACGC2204": {"name": "Allen County French Families Genealogy (batch 2204)"},
+  "READHUNT": {"name": "Read/Hunt Family Collection"},
+  "TREADWAY": {"name": "Treadway Family Collection"},
+  "BETTYF": {"name": "Betty Fitch Collection"},
+  "ACPLGC21": {"name": "School Yearbooks (batch ACPLGC21)"},
+  "GCFS2202": {"name": "School Yearbooks (batch GCFS2202)"},
+  "GCFS2372": {"name": "School Yearbooks (batch GCFS2372)"},
+  "GCFS2343": {"name": "Town Annual Reports (batch GCFS2343)"},
+  "GCFS2314": {"name": "American Indian History Collection (batch GCFS2314)"}
+}
