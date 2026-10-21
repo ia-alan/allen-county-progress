@@ -42,5 +42,11 @@
   "GCFS2202": {"name": "School Yearbooks (batch GCFS2202)"},
   "GCFS2372": {"name": "School Yearbooks (batch GCFS2372)"},
   "GCFS2343": {"name": "Town Annual Reports (batch GCFS2343)"},
-  "GCFS2314": {"name": "American Indian History Collection (batch GCFS2314)"}
+  "GCFS2314": {"name": "American Indian History Collection (batch GCFS2314)"},
+  "ACGC2603": {"name": "School Yearbooks (batch 2603)"},
+  "GATES": {"name": "William and Charlotte Lee Gates Collection"},
+  "RITAS": {"name": "Rita Snyder Collection"},
+  "SJOWEN": {"name": "Susan J. Owen Collection"},
+  "PEARSON": {"name": "Ralph Pearson Collection"},
+  "HIGHTWR": {"name": "Jack Hightower Family Collection"}
 }

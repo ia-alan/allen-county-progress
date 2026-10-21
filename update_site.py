@@ -79,6 +79,7 @@ METADATA_URL = "https://archive.org/metadata/"
 QUERY = "collection:allen_county"
 FIELDS = "identifier,shiptracking,repub_state,republisher_date,publicdate,imagecount"
 ACTIVE_WINDOW_DAYS = 90
+UNCONFIRMED_QUIET_DAYS = 14          # a shipment whose total is only what search shows isn't called complete until it's been this quiet
 
 ID_PATTERN = re.compile(r"^([a-zA-Z]+?)(\d+)$")
 
@@ -784,10 +785,15 @@ def build_shipments_data(items, manifest=None, prev_shipments=None):
     for code, (prefix, numbers) in candidates.items():
         cached = cached_numbers_for(code, prefix, None)
         cache_note = f" ({len(cached)} settled in cache)" if cached else ""
-        print(f"  enumerating {code} (prefix={prefix}, auto-detected){cache_note}...", flush=True)
+        # A manifest expected_items still applies without an identifier_prefix --
+        # it's the only way to know a shipment's real size before the last item
+        # is scanned. It only raises the displayed total; it does not change
+        # what gets probed.
+        expected = (manifest.get(code) or {}).get("expected_items")
+        print(f"  enumerating {code} (prefix={prefix}, auto-detected, expected={expected}){cache_note}...", flush=True)
         g, settled_str, cache_hits = process_enumerated_code(
             indexed_by_code, code, prefix, numbers, cached,
-            lo=1, min_hi=0, width=None, expect_code=None, manifest_expected=None,
+            lo=1, min_hi=0, width=None, expect_code=None, manifest_expected=expected,
         )
         new_enum_cache[code] = {"_meta": {"prefix": prefix, "width": None}, **settled_str}
         total_cache_hits += cache_hits
@@ -795,6 +801,12 @@ def build_shipments_data(items, manifest=None, prev_shipments=None):
         if g["unresolved"]:
             print(f"    WARNING: {g['unresolved']} identifier probe(s) for {code} could not be "
                   f"resolved (network error or throttling) -- this row may undercount.", flush=True)
+        if expected and g["observed_items"] > expected:
+            manifest_warnings.append({
+                "code": code, "kind": "manifest_exceeded",
+                "detail": f"expected_items is {expected} but {g['observed_items']} item(s) actually "
+                          f"exist -- update {MANIFEST_PATH}.",
+            })
         groups[code] = g
 
     # Manifest-declared codes: processed directly and UNCONDITIONALLY, whether or
@@ -866,7 +878,15 @@ def build_shipments_data(items, manifest=None, prev_shipments=None):
     for code, entries in indexed_by_code.items():
         if code in groups:
             continue
-        total = len(entries)
+        observed = len(entries)
+        expected = (manifest.get(code) or {}).get("expected_items")
+        total = max(expected or 0, observed)
+        if expected and observed > expected:
+            manifest_warnings.append({
+                "code": code, "kind": "manifest_exceeded",
+                "detail": f"expected_items is {expected} but {observed} item(s) actually "
+                          f"exist -- update {MANIFEST_PATH}.",
+            })
         completed = sum(1 for e in entries if e.get("repub_state") == "19")
         pages_completed = sum(as_int(e.get("imagecount")) for e in entries if e.get("repub_state") == "19")
         pages_scanned = sum(as_int(e.get("imagecount")) for e in entries)
@@ -891,15 +911,17 @@ def build_shipments_data(items, manifest=None, prev_shipments=None):
             "unresolved": 0,
             "foreign": 0,
             "total_probes": 0,
-            "total_source": "indexed-only",
-            "total_confirmed": False,
-            "expected_items": None,
-            "observed_items": total,
-            "overage": 0,
+            # With a packing-list count the total is known, not guessed from search.
+            "total_source": ("manifest" if expected >= observed else "manifest-exceeded") if expected else "indexed-only",
+            "total_confirmed": bool(expected),
+            "expected_items": expected,
+            "observed_items": observed,
+            "overage": max(0, observed - expected) if expected else 0,
         }
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=ACTIVE_WINDOW_DAYS)
     stale_cutoff = datetime.now(timezone.utc) - timedelta(days=STALE_DECLARED_DAYS)
+    quiet_cutoff = datetime.now(timezone.utc) - timedelta(days=UNCONFIRMED_QUIET_DAYS)
 
     # A shipment appearing here has had activity in the last ACTIVE_WINDOW_DAYS.
     # This used to be the entire "active" list, which meant a shipment that
@@ -953,8 +975,11 @@ def build_shipments_data(items, manifest=None, prev_shipments=None):
         # existed. It stays visible unconditionally while un-closed; a
         # STALE_DECLARED_DAYS-old one gets a warning, not a removal.
         is_declared_no_activity = bool(m.get("identifier_prefix")) and not m.get("closed") and not last_dates
+        # Likewise, a shipment with a packing-list count it hasn't reached yet is
+        # still in progress no matter how long the scanners have paused on it.
+        is_declared_unfinished = bool(m.get("expected_items")) and not m.get("closed") and g["completed"] < g["total"]
 
-        if not (recent or is_declared_no_activity):
+        if not (recent or is_declared_no_activity or is_declared_unfinished):
             continue
 
         if is_declared_no_activity:
@@ -977,7 +1002,11 @@ def build_shipments_data(items, manifest=None, prev_shipments=None):
                 })
 
         last_activity = max(last_dates).strftime("%Y-%m-%d") if last_dates else None
-        is_complete = g["total"] > 0 and g["completed"] >= g["total"]
+        # Search only ever shows finished items, so a shipment with no packing-
+        # list count and no number pattern always reads 100% -- even mid-scan.
+        # Don't call it complete until new items have stopped arriving.
+        quiet = not last_dates or max(last_dates) < quiet_cutoff
+        is_complete = g["total"] > 0 and g["completed"] >= g["total"] and (g["total_confirmed"] or quiet)
 
         row = {
             "code": code,
@@ -999,13 +1028,34 @@ def build_shipments_data(items, manifest=None, prev_shipments=None):
         }
 
         if not is_complete:
+            # A shipment recorded as complete earlier can turn out to be bigger
+            # than it looked (more items scanned since, or an expected_items
+            # added to the manifest). Take it back out of history -- otherwise it
+            # would show in both lists, and the stale "done" row would win once
+            # it ages out of Active.
+            if completed_history.pop(code, None) is not None:
+                print(f"  {code}: was recorded complete but is now {g['completed']}/{g['total']} -- reopened.")
             active.append(row)
             continue
 
         if code in completed_history:
-            # Already recorded as complete in a prior run -- it has already had
-            # its one appearance in Active with the finalizing badge, and now
-            # lives only in the completed-history list. Nothing to do here.
+            # Already recorded as complete in a prior run. Refresh its numbers
+            # every run it's still active: a shipment whose items each finish
+            # before search sees the next one (common for title-named batches
+            # with no number pattern) reads 100% at every step, so the first
+            # snapshot -- often 1/1 -- would otherwise be frozen in forever.
+            h = completed_history[code]
+            if (h.get("total"), h.get("completed")) != (g["total"], g["completed"]):
+                print(f"  {code}: completed record updated {h.get('completed')}/{h.get('total')} "
+                      f"-> {g['completed']}/{g['total']}")
+            h.update({
+                "total": g["total"],
+                "completed": g["completed"],
+                "total_confirmed": g["total_confirmed"],
+                "discovery": g["discovery"],
+                "pages_completed": g["pages_completed"],
+                "completed_date": max(h.get("completed_date") or "", last_activity or ""),
+            })
             continue
 
         # First time this code is seen at completed==total: record it permanently.
@@ -1013,6 +1063,7 @@ def build_shipments_data(items, manifest=None, prev_shipments=None):
             "name": m.get("name"),
             "total": g["total"],
             "completed": g["completed"],
+            "total_confirmed": g["total_confirmed"],
             "discovery": g["discovery"],
             "pages_completed": g["pages_completed"],
             "completed_date": last_activity or date.today().strftime("%Y-%m-%d"),
@@ -1040,6 +1091,7 @@ def build_shipments_data(items, manifest=None, prev_shipments=None):
             "name": h.get("name"),
             "total": h["total"],
             "completed": h["completed"],
+            "total_confirmed": h.get("total_confirmed", h.get("discovery") != "indexed-only"),
             "discovery": h.get("discovery"),
             "pages_completed": h.get("pages_completed"),
             "completed_date": h.get("completed_date"),
@@ -1195,13 +1247,16 @@ def main():
     now = datetime.now(timezone.utc)
     manifest = load_manifest()
     declared_codes = {code for code, m in manifest.items() if m.get("identifier_prefix")}
+    # Codes with a packing-list count are fetched too, so one that has paused
+    # past the activity window still gets its items counted.
+    counted_codes = {code for code, m in manifest.items() if m.get("expected_items") and not m.get("closed")}
 
     if "--full-scan" in sys.argv:
         print("--full-scan given: pulling the ENTIRE collection (the slow, exhaustive audit path).")
         items = fetch_all_items()
     else:
         discovered_codes = fetch_discovery_items(now)
-        target_codes = discovered_codes | declared_codes
+        target_codes = discovered_codes | declared_codes | counted_codes
         items = fetch_items_for_codes(target_codes)
 
     if not items and not declared_codes:
