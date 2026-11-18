@@ -644,9 +644,14 @@ def find_enumerable_candidates(indexed_by_code, declared_codes=()):
                 "imagecount": e.get("imagecount"),
             }
         lo, hi = min(numbers), max(numbers)
-        span = hi - lo + 1
-        ratio = span / len(numbers)
-        if lo <= 5 and ratio <= 8:
+        # Enumeration always probes from 1, so judge density over 1..hi. This
+        # used to also require lo <= 5, but items finish out of order: a
+        # shipment mid-scan (whitesidecoll14..298, 160 visible) can easily
+        # have no finished item below 5 yet, and was then left indexed-only,
+        # showing every unfinished item as missing and reading 100% complete.
+        # The density check alone still rejects year-like or sparse suffixes.
+        ratio = hi / len(numbers)
+        if ratio <= 8:
             candidates[code] = (prefix, numbers)
         else:
             print(f"  NOTE: {code} looks like it might follow the pattern '{prefix}<number>' "

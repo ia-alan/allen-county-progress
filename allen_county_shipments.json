@@ -48,5 +48,6 @@
   "RITAS": {"name": "Rita Snyder Collection"},
   "SJOWEN": {"name": "Susan J. Owen Collection"},
   "PEARSON": {"name": "Ralph Pearson Collection"},
-  "HIGHTWR": {"name": "Jack Hightower Family Collection"}
+  "HIGHTWR": {"name": "Jack Hightower Family Collection"},
+  "WHITESID": {"identifier_prefix": "whitesidecoll", "notes": "Items finish out of order; prefix declared so unfinished (hidden) items are counted."}
 }
